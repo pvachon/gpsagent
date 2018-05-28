@@ -6,6 +6,8 @@ import serial_asyncio
 import os
 import asyncio
 import aiofiles
+import time
+import json
 from aiohttp import web
 
 class TruePositionState(object):
@@ -23,6 +25,8 @@ class TruePositionState(object):
         self._tdop = 0.0
         self._temperature = 0.0
         self._geo = (0.0, 0.0)
+        self._elev = 0
+        self._elev_corr = 0
         self._10mhz_bad = False
         self._1pps_bad = False
         self._antenna_bad = False
@@ -35,30 +39,53 @@ class TruePositionState(object):
         self._is_active = False
         self._in_bootloader = False
         self._outputs = outputs
+        self._survey_secs = 0
 
     def _encode_state(self):
-        return {'gpsEpoch': self._wallclock,
-                'leapSeconds': self._leap_seconds,
-                'timeQuality' : self._quality,
-                'isBooted' : self._is_active,
-                'isSurvey' : self._is_survey,
-                'extParams' : {'nrSignals': self._nr_sat_signals,
-                               'tdop' : self._tdop,
-                               'temperatureC' : self._temperature},
-                'location' : {'lat': self._geo[0],
-                              'lon': self._geo[1]},
-                'tenMhzBad' : self._10mhz_bad,
-                'onePPSBad' : self._1pps_bad,
-                'antennaBad' : self._antenna_bad,
-                'holdoverSec' : self._holdover_sec,
-                'trackedSats' : [x for x in self._sats.values()],
-                'nrTrackedSats' : self._nr_tracked_sats,
-                'state' : self._state,
-                'firmwareVersion' : self._firmware_version,
-                'firmwareSerial' : self._firmware_serial,}
+        state = {'gpsEpoch': self._wallclock,
+                 'leapSeconds': self._leap_seconds,
+                 'timeQuality' : self._quality,
+                 'isBooted' : self._is_active,
+                 'isSurvey' : self._is_survey,
+                 'extParams' : {'nrSignals': self._nr_sat_signals,
+                                'tdop' : self._tdop,
+                                'temperatureC' : self._temperature},
+                 'location' : {'lat': self._geo[0],
+                               'lon': self._geo[1],
+                               'elevMetres': self._elev,
+                               'elevCorrWGS84': self._elev_corr},
+                 'tenMhzBad' : self._10mhz_bad,
+                 'onePPSBad' : self._1pps_bad,
+                 'antennaBad' : self._antenna_bad,
+                 'holdoverSec' : self._holdover_sec,
+                 'trackedSats' : [y for y in self._sats.values()],
+                 'nrTrackedSats' : self._nr_tracked_sats,
+                 'state' : self._state,
+                 'firmwareVersion' : self._firmware_version,
+                 'firmwareSerial' : self._firmware_serial,}
+
+        if self._is_survey:
+            state['surveySeconds'] = self._survey_secs
+        return state
 
     def get_state(self):
         return self._encode_state()
+
+    @property
+    def epoch_time(self):
+        kGPS_EPOCH_DELTA = 315964800 + self._leap_seconds
+        return kGPS_EPOCH_DELTA + self._wallclock
+
+    def _encode_gps_state(self):
+        return {'date': time.strftime('%H%M%S', time.gmtime(self.epoch_time)),
+                'nrTrackedSats': self._nr_tracked_sats,
+                'elevMetres': self._elev,
+                'latitude': self._geo[0],
+                'longitude': self._geo[1],
+                'geoidOffs': self._elev_corr}
+
+    def get_gps_state(self):
+        return self._encode_gps_state()
 
     async def enqueue_message(self, msg):
         """
@@ -90,23 +117,32 @@ class TruePositionState(object):
         self._is_active = True
         fields = msg.split(' ')
         channel = int(fields[1])
-        self._sats[channel] = {
-                'satId' : int(fields[2]),
-                'elevation': int(fields[3]),
-                'azimuth': int(fields[4]),
-                'snr' : int(fields[5]),
-            }
+
+        sat_info = {'satId': int(fields[2]),
+                    'el': int(fields[3]),
+                    'az': int(fields[4]),
+                    'snr' : int(fields[5]),
+                    'lastSeen' : self.epoch_time,
+                    'slotId': channel,}
+        self._sats[channel] = sat_info
+        return sat_info
 
     def _wsat(self, msg):
         self._is_active = True
-        pass
 
     def _default(self, msg):
-        pass
+        logging.info('UNKNOWN MSG: [{}]'.format(msg))
 
     def _survey(self, msg):
         self._is_active = True
-        pass
+        fields = msg.split(' ')
+        lat = float(fields[1])/1e6
+        lon = float(fields[2])/1e6
+        self._elev = float(fields[3])
+        self._elev_corr = float(fields[4])
+        self._survey_secs = int(fields[5])
+        self._geo = (lat, lon)
+
 
     def _extstatus(self, msg):
         self._is_active = True
@@ -131,8 +167,8 @@ class TruePositionState(object):
         fields = msg.split(' ')
         lat = float(fields[1])/1e6
         lon = float(fields[2])/1e6
-        elev = float(fields[3])
-        msl_corr = int(fields[4])
+        self._elev = float(fields[3])
+        self._elev_corr = float(fields[4])
         state = int(fields[5])
         self._geo = (lat, lon)
 
@@ -201,8 +237,18 @@ class TruePositionState(object):
                     await self._serial_proto.enqueue_command(resp)
             elif msg.startswith('$CLOCK'):
                 self._clock(msg)
+                # A clock message needs to be converted to an NMEA sentence
+                clock_state = self.get_gps_state()
+                clock_state['type'] = 'gps'
+                for o in self._outputs:
+                    await o.enqueue_tp_message(clock_state)
             elif msg.startswith('$SAT'):
-                self._sat(msg)
+                sat_info = self._sat(msg)
+                # Send out the updated satellite data
+                sat_info['type'] = 'sat'
+                for o in self._outputs:
+                    await o.enqueue_tp_message(sat_info)
+
             elif msg.startswith('$WSAT'):
                 self._wsat(msg)
             elif msg.startswith('$SURVEY'):
@@ -214,7 +260,6 @@ class TruePositionState(object):
             elif msg.startswith('$STATUS'):
                 self._status(msg)
             else:
-                logging.info('MSG: [{}]'.format(msg))
                 self._default(msg)
 
             if self._in_bootloader:
@@ -247,6 +292,29 @@ class TruePositionNMEAWriter(object):
     async def _writer(self):
         while self._running:
             msg = await self._msg_queue.get()
+
+    def start(self, loop=asyncio.get_event_loop()):
+        self._running = True
+        asyncio.ensure_future(self._writer(), loop=loop)
+
+    def stop(self):
+        self._running = False
+
+class TruePositionSatWriter(object):
+    def __init__(self, out_file, loop=asyncio.get_event_loop()):
+        self._msg_queue = asyncio.Queue(loop=loop)
+        self._file = loop.run_until_complete(aiofiles.open(out_file, 'wt+'))
+
+    async def enqueue_tp_message(self, msg):
+        await self._msg_queue.put(msg)
+
+    async def _writer(self):
+        while self._running:
+            msg = await self._msg_queue.get()
+            if msg.get('type', 'unknown') == 'sat':
+                logging.debug('EPHEMERIS: {}'.format(msg))
+                await self._file.write(json.dumps(msg) + '\n')
+                await self._file.flush()
 
     def start(self, loop=asyncio.get_event_loop()):
         self._running = True
@@ -337,7 +405,10 @@ def main():
     parser.add_argument('-v', '--verbose', help='verbose output', action='store_true')
     parser.add_argument('-u', '--uart', help='specify the UART to use', required=True)
     parser.add_argument('-b', '--baud', type=int, help='specify the baud rate to use', required=True)
-    parser.add_argument('-P', '--port', type=int, help='specify the TCP port for the HTTP server to listen on', required=False, default=24601)
+    parser.add_argument('-P', '--port', type=int,
+            help='specify the TCP port for the HTTP server to listen on', required=False, default=24601)
+    parser.add_argument('-s', '--satfile', help='specify output file to dump satellite ephemeris to',
+            required = False)
     parser.add_argument('outfifos', metavar='OUTFIFOS', help='Output FIFOs to write NMEA sentences to',
             nargs='+')
     args = parser.parse_args()
@@ -369,6 +440,11 @@ def main():
     logging.info('Starting HTTP Command and Control server on port {}'.format(args.port))
     tphttp = TruePositionHTTPApi(st, port=args.port, loop=loop)
     tphttp.start(loop=loop)
+
+    # Check if the user asked to log satellite ephemeris data
+    if args.satfile:
+        logging.info('Dumping satellite ephemeris to file {}'.format(args.satfile))
+        outputs.append(TruePositionSatWriter(args.satfile, loop=loop))
 
     # Start this mess
     for output in outputs:
