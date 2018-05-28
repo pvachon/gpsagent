@@ -38,7 +38,7 @@ class TruePositionState(object):
     def _getver(self, msg):
         if 'BOOT' in msg:
             self._in_bootloader = True
-            return '$PROCEED'
+            return
 
         fields = msg.split(' ')
         self._firmware_version = fields[1]
@@ -76,10 +76,20 @@ class TruePositionState(object):
     def _extstatus(self, msg):
         self._is_active = True
         fields = msg.split(' ')
-        self._is_survey = int(fields[1]) == 1
-        self._nr_sat_signals = int(fields[2])
+        is_survey = int(fields[1]) == 1
+        nr_sat_signals = int(fields[2])
         self._tdop = float(fields[3])
         self._temperature = float(fields[4])
+
+        if is_survey != self._is_survey:
+            if is_survey:
+                logging.info('GPS Receiver is performing a site survey')
+
+        if nr_sat_signals != self._nr_sat_signals:
+            logging.info('We see {} external satellite signals'.format(nr_sat_signals))
+
+        self._is_survey = is_survey
+        self._nr_sat_signals = nr_sat_signals
 
     def _getpos(self, msg):
         self._is_active = True
@@ -120,7 +130,7 @@ class TruePositionState(object):
                 logging.info('Antenna is good.')
 
         if nr_tracked_sats != self._nr_tracked_sats:
-            logging.info('Tracking {} satellites'.format(nr_tracked_sats))
+            logging.info('Software PLL locked for {} satellites'.format(nr_tracked_sats))
 
         if state != self._state:
             logging.info('State {} -> {}'.format(self._state, state))
@@ -234,7 +244,8 @@ def main():
         log_level = logging.DEBUG
         #loop.set_debug(True)
 
-    logging.basicConfig(format='%(asctime)s - %(name)s:%(levelname)s:%(message)s', datefmt='%m/%d/%Y %H:%M:%S', level=log_level)
+    logging.basicConfig(format='%(asctime)s - %(name)s:%(levelname)s:%(message)s',
+            datefmt='%m/%d/%Y %H:%M:%S', level=log_level)
 
     logging.info('Starting GPS Agent (uart={}, baud rate={})'.format(args.uart, args.baud))
 
