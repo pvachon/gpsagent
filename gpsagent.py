@@ -316,7 +316,7 @@ class TruePositionNMEAWriter(object):
                 'nr_sats': msg.get('nrSats', 0),
                 }
 
-        return 'GPGGA,{time},{lat_deg}{lat_mins:6.4f},{lat_dir},{lon_deg:03d}{lon_mins:6.4f},{lon_dir},{fix_quality},{nr_sats},,{elev},M,{to_geoid},M,,,'.format(**fields)
+        return 'GPGGA,{time},{lat_deg:02d}{lat_mins:6.4f},{lat_dir},{lon_deg:03d}{lon_mins:6.4f},{lon_dir},{fix_quality},{nr_sats},,{elev},M,{to_geoid},M,,,'.format(**fields)
 
     async def _writer(self):
         def __nmea_chksum(msg):
