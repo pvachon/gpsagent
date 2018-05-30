@@ -5,6 +5,7 @@
 import aiofiles
 import asyncio
 import logging
+import json
 
 class TruePositionSatWriter(object):
     def __init__(self, out_file, loop=asyncio.get_event_loop()):
