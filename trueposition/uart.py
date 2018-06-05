@@ -37,10 +37,10 @@ class TruePositionUART(asyncio.Protocol):
 
     def data_received(self, data):
         for c in data.decode('utf-8'):
-            if c == '\r':
+            if c == '\n':
                 self._messages.append(self._cur)
                 self._cur = ''
-            elif c == '\n':
+            elif c == '\r':
                 # Eat \n, due to weird bootloader bugs
                 continue
             else:
