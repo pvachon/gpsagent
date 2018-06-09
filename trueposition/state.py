@@ -4,7 +4,6 @@
 
 import asyncio
 import logging
-import time
 
 class TruePositionState(object):
     def __init__(self, serial_proto, outputs=[]):
@@ -73,7 +72,7 @@ class TruePositionState(object):
         return kGPS_EPOCH_DELTA + self._wallclock
 
     def _encode_gps_state(self):
-        return {'time': time.strftime('%H%M%S', time.gmtime(self.epoch_time)),
+        return {'time': self.epoch_time,
                 'nrTrackedSats': self._nr_tracked_sats,
                 'elevMetres': self._elev,
                 'latitude': self._geo[0],
