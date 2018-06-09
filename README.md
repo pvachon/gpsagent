@@ -33,6 +33,9 @@ though, and switch to Python 3, if you find yourself considering the latter.
 The `requirements.txt` file should be up to date, just install by piping it
 into pip.
 
+Of course, this uses `asyncio`, so if you intend to port to an older Python,
+you have your work cut out for you.
+
 ## License
 
 The TruePosition GPS Agent is licensed under an MIT/X style license.

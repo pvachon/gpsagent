@@ -68,7 +68,7 @@ class TruePositionState(object):
 
     @property
     def epoch_time(self):
-        kGPS_EPOCH_DELTA = 315964800 + self._leap_seconds
+        kGPS_EPOCH_DELTA = 315964800 - self._leap_seconds
         return kGPS_EPOCH_DELTA + self._wallclock
 
     def _encode_gps_state(self):

@@ -12,8 +12,8 @@ class TruePositionSHMWriter(object):
         self._msg_queue = asyncio.Queue(loop=loop)
         logging.debug('Connecting to shared memory segment, unit {}'.format(unit))
         self._shm = ntpdshm.NtpdShm(unit=unit)
-        self._shm.mode = 0
-        self._shm.precision = -6
+        self._shm.mode = 1
+        self._shm.precision = -7
         self._shm.leap = 0
 
     async def enqueue_tp_message(self, msg):
