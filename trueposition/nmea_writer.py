@@ -8,7 +8,7 @@ import logging
 import time
 
 class TruePositionNMEAWriter(object):
-    def __init__(self, out_file, loop=asyncio.get_event_loop(), zda_interval_sec=60):
+    def __init__(self, out_file, loop=asyncio.get_event_loop(), zda_interval_sec=0):
         self._msg_queue = asyncio.Queue(loop=loop)
         self._file = loop.run_until_complete(aiofiles.open(out_file, 'wt'))
         self._last_zda = time.gmtime(0)
@@ -18,7 +18,7 @@ class TruePositionNMEAWriter(object):
     async def enqueue_tp_message(self, msg):
         await self._msg_queue.put(msg)
 
-    def __format_gps(self, msg):
+    def __format_rmc(self, msg):
         def _frac_to_dm(frac_n):
             frac = abs(frac_n)
             deg = int(frac)
@@ -29,7 +29,9 @@ class TruePositionNMEAWriter(object):
         lat = msg.get('latitude', 0)
         lat_deg, lat_mins = _frac_to_dm(lat)
         lon_deg, lon_mins = _frac_to_dm(lon)
-        fields = {'time': time.strftime('%H%M%S', time.gmtime(msg.get('time'))),
+        now = time.gmtime(msg.get('time'))
+        fields = {'time': time.strftime('%H%M%S', now),
+                'date': time.strftime('%d%m%y', now),
                 'elev': msg.get('elevMetres', 0),
                 'to_geoid': msg.get('geoidOffs', 0),
                 'lat_deg': lat_deg,
@@ -38,11 +40,11 @@ class TruePositionNMEAWriter(object):
                 'lon_mins': lon_mins,
                 'lat_dir': 'N' if lat > 0 else 'S',
                 'lon_dir': 'E' if lon > 0 else 'W',
-                'fix_quality': '1' if msg.get('goodFix', False) else 0,
+                'fix_quality': 'A' if msg.get('goodFix', False) else 'V',
                 'nr_sats': msg.get('nrSats', 0),
                 }
 
-        return 'GPGGA,{time},{lat_deg:02d}{lat_mins:6.4f},{lat_dir},{lon_deg:03d}{lon_mins:6.4f},{lon_dir},{fix_quality},{nr_sats},,{elev},M,{to_geoid},M,,,'.format(**fields)
+        return 'GPRMC,{time},{fix_quality},{lat_deg:02d}{lat_mins:6.4f},{lat_dir},{lon_deg:03d}{lon_mins:6.4f},{lon_dir},0.0,0.0,{date},0.0,E'.format(**fields)
 
     def __format_zda(self, msg):
         gmt = time.gmtime(msg.get('time'))
@@ -56,7 +58,7 @@ class TruePositionNMEAWriter(object):
                 checksum ^= ord(c)
             return checksum
 
-        return '${}*{:2x}\n'.format(msg_body, __nmea_chksum(msg_body))
+        return '${}*{:2X}\n'.format(msg_body, __nmea_chksum(msg_body))
 
     async def _writer(self):
         self._last_zda = 0
@@ -67,7 +69,7 @@ class TruePositionNMEAWriter(object):
             # Logic to handle sending a periodic ZDA message to help the receiver figure out the
             # UTC date.
             now = time.time()
-            if self._last_gps_msg and (now - self._last_zda) >= self._zda_interval_sec:
+            if self._zda_interval_sec and self._last_gps_msg and (now - self._last_zda) >= self._zda_interval_sec:
                 self._last_zda = now
                 await self._file.write(self.__format_nmea_msg(self.__format_zda(self._last_gps_msg)))
                 await self._file.flush()
@@ -77,7 +79,7 @@ class TruePositionNMEAWriter(object):
                 pass
             elif msg_type == 'gps':
                 self._last_gps_msg = msg
-                await self._file.write(self.__format_nmea_msg(self.__format_gps(msg)))
+                await self._file.write(self.__format_nmea_msg(self.__format_rmc(msg)))
                 await self._file.flush()
             else:
                 logging.debug('Unknown message type: {} (Message: {})'.format(msg_type, msg))

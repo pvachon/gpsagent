@@ -18,7 +18,9 @@ def main():
     parser.add_argument('-P', '--port', type=int,
             help='specify the TCP port for the HTTP server to listen on', required=False, default=24601)
     parser.add_argument('-s', '--satfile', help='specify output file to dump satellite ephemeris to',
-            required = False)
+            required=False)
+    parser.add_argument('-S', '--shm-unit', help='update specified shared memory unit for ntpd', required=False,
+            default=0, type=int)
     parser.add_argument('outfifos', metavar='OUTFIFOS', help='Output FIFOs to write NMEA sentences to',
             nargs='+')
     args = parser.parse_args()
@@ -54,6 +56,10 @@ def main():
     if args.satfile:
         logging.info('Dumping satellite ephemeris to file {}'.format(args.satfile))
         outputs.append(trueposition.TruePositionSatWriter(args.satfile, loop=loop))
+
+    if args.shm_unit:
+        logging.info('Time will be populated in shm unit {}'.format(args.shm_unit))
+        outputs.append(trueposition.TruePositionSHMWriter(loop=loop, unit=args.shm_unit))
 
     # Start this mess
     for output in outputs:
