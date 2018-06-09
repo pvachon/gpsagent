@@ -38,6 +38,7 @@ class TruePositionState(object):
 
     def _encode_state(self):
         state = {'gpsEpoch': self._wallclock,
+                 'unixEpoch' : self.epoch_time,
                  'leapSeconds': self._leap_seconds,
                  'timeQuality' : self._quality,
                  'isBooted' : self._is_active,
