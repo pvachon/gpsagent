@@ -24,6 +24,25 @@ This could be used with a Raspberry Pi or similar SBC running Linux. The PPS
 signal from the GPSDO could be fed into a GPIO on your SBC, and then ntpd can
 consume the NMEA data and react to the PPS interrupt trigger.
 
+### Sample NTP Configuration
+
+There is a sample ntpd configuration file (`ntp.conf.sample`) that you can use
+as a starting point for building your own stratum 1 time source. There are some
+parameters (such as the pool IDs you're connecting to, the time1 value for
+the SHM delay, etc.).
+
+To use this configuration, you'll likely want to start `gpsagent` with something
+like:
+
+```
+./gpsagent.py -u /dev/ttyS1 -b 9600 -S 2
+```
+
+Since:
+ * The configuration uses SHM unit 2 (`-S 2`)
+ * In my case, the TruePosition GPSDO is sending me messages on /dev/ttyS1
+ * The GPSDO is (by default, as far as I can tell) running at 9600 baud.
+
 ## Requirements
 
 This only is known to work with Python 3, but it might not be rocket science
