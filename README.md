@@ -15,6 +15,8 @@ There is something resembling a feature set here.
  * The general state can be monitored from the logs output on stderr
  * NMEA sentences can be output to zero or more files/FIFOs/whatever for other
    apps to consume.
+ * Time information can be output to a shared memory region to be picked up
+   by ntpd or other compatible apps.
 
 ## Use Case
 
