@@ -21,8 +21,7 @@ def main():
             required=False)
     parser.add_argument('-S', '--shm-unit', help='update specified shared memory unit for ntpd', required=False,
             default=0, type=int)
-    parser.add_argument('outfifos', metavar='OUTFIFOS', help='Output FIFOs to write NMEA sentences to',
-            nargs='+')
+    parser.add_argument('-n', '--nmea', help='Output file to write NMEA sentences to', required=False)
     args = parser.parse_args()
 
     loop = asyncio.get_event_loop()
@@ -41,8 +40,11 @@ def main():
     # Set up the asyncio serial protocol
     proto = trueposition.TruePositionUART.Create(loop=loop, uart=args.uart, baudrate=args.baud)
 
-    # For each output fifo, create an output object
-    outputs = [ trueposition.TruePositionNMEAWriter(outfifo) for outfifo in args.outfifos ]
+    # For each output destination, create an output object
+    outputs = []
+    if args.nmea:
+        logging.info('Writing NMEA sentences out to {}'.format(args.nmea))
+        outputs = outputs.append(trueposition.TruePositionNMEAWriter(args.nmea))
 
     # Create the TruePosition state manager
     st = trueposition.TruePositionState(proto, outputs)
